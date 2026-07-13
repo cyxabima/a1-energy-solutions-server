@@ -1,15 +1,27 @@
-import express, { type Request, type Response } from "express";
+import app from "./app.js";
+import { config } from "./config/index.js";
+import { closeDB, connectDB } from "./db/index.js";
 
-const app = express();
+async function start() {
+	try {
+		await connectDB();
+		app.listen(config.port, () => {
+			console.log(`Server running on port ${config.port}`);
+		});
+	} catch (error) {
+		console.error("Failed to start server:", error);
+		process.exit(1);
+	}
+}
 
-app.get("/health", (_: Request, res: Response) => {
-	res.status(200).json({
-		staus: 200,
-		sucess: true,
-		message: "server is healthy",
-	});
+start();
+
+process.on("SIGINT", async () => {
+	await closeDB();
+	process.exit(0);
 });
 
-app.listen(8000, () => {
-	console.log("App is listening on Port", 8000);
+process.on("SIGTERM", async () => {
+	await closeDB();
+	process.exit(0);
 });
