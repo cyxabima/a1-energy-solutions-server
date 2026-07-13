@@ -8,9 +8,13 @@ export interface CustomJwtPayload extends jwt.JwtPayload {
 	};
 }
 
+export interface AuthUser {
+	_id: string;
+	name: string;
+	email: string;
+	role: string;
+}
+
 export interface AuthRequest extends Request {
-	user?: {
-		name: string;
-		role: string;
-	};
+	user?: AuthUser;
 }
