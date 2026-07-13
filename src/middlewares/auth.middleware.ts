@@ -1,9 +1,9 @@
 import type { NextFunction, Response } from "express";
 import jwt from "jsonwebtoken";
+import { config } from "../config/index.js";
+import { findUserById, toSafeUser } from "../models/user.model.js";
 import type { AuthRequest, CustomJwtPayload } from "../types/index.js";
 import ApiError from "../utils/api-error.js";
-
-const SECRET = process.env.SECRET as string;
 
 const verifyJwt = async (req: AuthRequest, _: Response, next: NextFunction) => {
 	try {
@@ -17,35 +17,22 @@ const verifyJwt = async (req: AuthRequest, _: Response, next: NextFunction) => {
 			);
 		}
 
-		const decodedToken = jwt.verify(token, SECRET) as CustomJwtPayload;
-		console.log(token);
-		console.log(decodedToken);
+		const decodedToken = jwt.verify(token, config.secret) as CustomJwtPayload;
 
 		if (!decodedToken?.data.userId) {
 			return next(new ApiError(401, "UNAUTHORIZED", "Invalid token payload"));
 		}
 
-		const userId = decodedToken.data.userId;
-
-		// TODO: make a db call to find the user
-
-		const foundUser = {
-			name: "Adeel",
-			role: "ADMIN",
-			userId: userId,
-		};
+		const foundUser = await findUserById(decodedToken.data.userId);
 
 		if (!foundUser) {
 			return next(new ApiError(401, "UNAUTHORIZED", "User no longer exists"));
 		}
 
-		// TODO: Attached user to req
-		req.user = foundUser;
-
+		req.user = toSafeUser(foundUser);
 		next();
-	} catch (error) {
-		console.log(error);
-		return next(new ApiError(401, "UNAUTHORIZED", "invalid or expire token"));
+	} catch (_error) {
+		return next(new ApiError(401, "UNAUTHORIZED", "Invalid or expired token"));
 	}
 };
 

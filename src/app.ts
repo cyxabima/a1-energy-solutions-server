@@ -1,6 +1,7 @@
 import cors from "cors";
 import express, { type Express } from "express";
 import { errorHandler } from "./middlewares/error.middleware.js";
+import router from "./router/index.js";
 
 const app: Express = express();
 
@@ -15,8 +16,7 @@ app.get("/health", (_, res) => {
 	});
 });
 
-// Routes will be mounted here
-// app.use("/api/v1", router);
+app.use("/api/v1", router);
 
 app.use(errorHandler);
 
