@@ -159,12 +159,15 @@ export async function getProductsHandler(req: Request, res: Response) {
 		typeof req.query.category === "string" ? req.query.category : "";
 	const brand = typeof req.query.brand === "string" ? req.query.brand : "";
 	const unit = typeof req.query.unit === "string" ? req.query.unit : "";
+	const owner = typeof req.query.owner === "string" ? req.query.owner : "";
 	const page = Math.max(1, Number(req.query.page) || 1);
 	const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
 
 	const filters: Record<string, string> = {};
 	if (authReq.user?.role !== "ADMIN" && authReq.user?._id) {
 		filters.owner = authReq.user._id;
+	} else if (authReq.user?.role === "ADMIN" && owner) {
+		filters.owner = owner;
 	}
 
 	const { products, total } = await getProducts({
