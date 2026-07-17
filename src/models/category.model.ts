@@ -156,11 +156,48 @@ export async function updateCategory(
 	id: string,
 	data: UpdateCategoryInput,
 ): Promise<Category | null> {
+	const existing = await collection().findOne({ _id: new ObjectId(id) });
+	if (!existing) return null;
+
 	const update: Record<string, unknown> = { updatedAt: new Date() };
 
-	if (data.name !== undefined) {
+	if (data.name !== undefined && data.name !== existing.name) {
+		const newSlug = toSlug(data.name);
+
+		if (newSlug !== existing.slug) {
+			const oldPath = existing.path;
+			const newPath = oldPath.replace(
+				new RegExp(`,${escapeRegex(existing.slug)},$`),
+				`,${newSlug},`,
+			);
+
+			const escapedOldPath = escapeRegex(oldPath);
+			const descendants = await collection()
+				.find({
+					path: { $regex: new RegExp(`^${escapedOldPath}`) },
+				})
+				.toArray();
+
+			if (descendants.length > 0) {
+				const bulkOps = descendants.map((desc) => ({
+					updateOne: {
+						filter: { _id: desc._id },
+						update: {
+							$set: {
+								path: desc.path.replace(oldPath, newPath),
+								updatedAt: new Date(),
+							},
+						},
+					},
+				}));
+				await collection().bulkWrite(bulkOps);
+			}
+
+			update.path = newPath;
+		}
+
 		update.name = data.name;
-		update.slug = toSlug(data.name);
+		update.slug = newSlug;
 	}
 
 	if (data.attributes !== undefined) {
