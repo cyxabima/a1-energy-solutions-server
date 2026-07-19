@@ -9,7 +9,6 @@ export const createProductSchema = z.object({
 	category: z.string(),
 	brand: z.string(),
 	unit: z.string(),
-	buyingPrice: z.number().positive(),
 	attributes: z.array(productAttributeSchema).min(1),
 	owner: z.string().optional(),
 });
@@ -18,7 +17,6 @@ export const updateProductSchema = z.object({
 	category: z.string().optional(),
 	brand: z.string().optional(),
 	unit: z.string().optional(),
-	buyingPrice: z.number().positive().optional(),
 	attributes: z.array(productAttributeSchema).optional(),
 });
 
