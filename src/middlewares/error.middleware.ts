@@ -10,7 +10,7 @@ export async function errorHandler(
 	if (err instanceof ApiError) {
 		return res.status(err.statusCode).json(err);
 	}
-	console.log(err.message);
+	console.log(err);
 	return res
 		.status(500)
 		.json(new ApiError(500, "Internal Server Error", "something went wrong"));

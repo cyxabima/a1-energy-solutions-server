@@ -5,13 +5,16 @@ import { config } from "../config/index.js";
 import {
 	createUser,
 	findUserByEmail,
+	findUserById,
 	type SafeUser,
 	toSafeUser,
+	updatePassword,
 } from "../models/user.model.js";
 import type { AuthRequest, AuthUser } from "../types/index.js";
 import ApiError from "../utils/api-error.js";
 import ApiResponse from "../utils/api-response.js";
 import type {
+	ChangePasswordInput,
 	LoginInput,
 	RegisterInput,
 } from "../validations/auth.validation.js";
@@ -110,4 +113,30 @@ export async function me(req: Request, res: Response) {
 	return res
 		.status(200)
 		.json(new ApiResponse<AuthUser>(200, user, "User fetched successfully"));
+}
+
+export async function changePasswordHandler(req: Request, res: Response) {
+	const authReq = req as AuthRequest;
+	const body = req.body as ChangePasswordInput;
+
+	const user = await findUserById(authReq.user?._id ?? "");
+	if (!user) {
+		throw new ApiError(404, "NOT_FOUND", "User not found");
+	}
+
+	const isMatch = await bcrypt.compare(body.currentPassword, user.password);
+	if (!isMatch) {
+		throw new ApiError(
+			400,
+			"INVALID_PASSWORD",
+			"Current password is incorrect",
+		);
+	}
+
+	const hashed = await bcrypt.hash(body.newPassword, 12);
+	await updatePassword(user._id.toString(), hashed);
+
+	return res
+		.status(200)
+		.json(new ApiResponse<null>(200, null, "Password updated successfully"));
 }

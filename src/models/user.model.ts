@@ -100,3 +100,14 @@ export async function updateUser(
 	if (!result) return null;
 	return toSafeUser(result as User);
 }
+
+export async function updatePassword(
+	id: string,
+	hashedPassword: string,
+): Promise<boolean> {
+	const result = await collection().updateOne(
+		{ _id: new ObjectId(id) },
+		{ $set: { password: hashedPassword, updatedAt: new Date() } },
+	);
+	return result.modifiedCount > 0;
+}
