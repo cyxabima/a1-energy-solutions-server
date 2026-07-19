@@ -15,6 +15,7 @@ import {
 	type ProductAttribute,
 	updateProduct,
 } from "../models/product.model.js";
+import { getCurrentStock } from "../models/stock.model.js";
 import { findUnitById } from "../models/unit.model.js";
 import type { AuthRequest } from "../types/index.js";
 import ApiError from "../utils/api-error.js";
@@ -138,7 +139,6 @@ export async function createProductHandler(req: Request, res: Response) {
 		brand: new ObjectId(brandId),
 		unit: new ObjectId(unitId),
 		owner: new ObjectId(ownerId),
-		buyingPrice: body.buyingPrice,
 		attributes: body.attributes,
 	});
 
@@ -237,7 +237,6 @@ export async function updateProductHandler(
 		category?: ObjectId;
 		brand?: ObjectId;
 		unit?: ObjectId;
-		buyingPrice?: number;
 		attributes?: ProductAttribute[];
 	} = {};
 
@@ -268,10 +267,6 @@ export async function updateProductHandler(
 		update.unit = new ObjectId(unitId);
 	}
 
-	if (body.buyingPrice !== undefined) {
-		update.buyingPrice = body.buyingPrice;
-	}
-
 	if (body.attributes !== undefined) {
 		const catId = body.category ?? existing.category.toString();
 		const inheritedAttrs = await collectInheritedAttributes(catId);
@@ -296,11 +291,32 @@ export async function deleteProductHandler(
 	req: Request<IdParam>,
 	res: Response,
 ) {
+	const authReq = req as AuthRequest;
 	const id = validateId(req.params.id, "product ID");
 
 	const existing = await findProductById(id);
 	if (!existing) {
 		throw new ApiError(404, "NOT_FOUND", "Product not found");
+	}
+
+	if (
+		authReq.user?.role === "OWNER" &&
+		existing.owner.toString() !== authReq.user._id
+	) {
+		throw new ApiError(
+			403,
+			"FORBIDDEN",
+			"You can only delete your own products",
+		);
+	}
+
+	const currentStock = await getCurrentStock(id);
+	if (currentStock > 0) {
+		throw new ApiError(
+			400,
+			"PRODUCT_HAS_STOCK",
+			`Cannot delete: product has ${currentStock} units in stock. Reduce stock to zero first.`,
+		);
 	}
 
 	await deleteProduct(id);
