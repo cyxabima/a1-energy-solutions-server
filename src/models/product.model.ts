@@ -15,7 +15,6 @@ export interface Product {
 	brand: ObjectId;
 	unit: ObjectId;
 	owner: ObjectId;
-	buyingPrice: number;
 	attributes: ProductAttribute[];
 	createdAt: Date;
 	updatedAt: Date;
@@ -29,7 +28,7 @@ export type CreateProductInput = Omit<
 };
 
 export type UpdateProductInput = Partial<
-	Pick<Product, "category" | "brand" | "unit" | "buyingPrice" | "attributes">
+	Pick<Product, "category" | "brand" | "unit" | "attributes">
 >;
 
 function collection(): Collection<OptionalId<Product>> {
@@ -87,7 +86,6 @@ export async function createProduct(
 		brand: data.brand,
 		unit: data.unit,
 		owner: data.owner,
-		buyingPrice: data.buyingPrice,
 		attributes: data.attributes,
 		createdAt: now,
 		updatedAt: now,
@@ -159,7 +157,6 @@ export async function updateProduct(
 	if (data.category !== undefined) update.category = data.category;
 	if (data.brand !== undefined) update.brand = data.brand;
 	if (data.unit !== undefined) update.unit = data.unit;
-	if (data.buyingPrice !== undefined) update.buyingPrice = data.buyingPrice;
 	if (data.attributes !== undefined) {
 		update.attributes = data.attributes;
 	}
