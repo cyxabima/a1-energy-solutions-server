@@ -3,6 +3,7 @@ import authRouter from "./auth.routes.js";
 import brandRouter from "./brand.routes.js";
 import categoryRouter from "./category.routes.js";
 import productRouter from "./product.routes.js";
+import stockRouter from "./stock.routes.js";
 import unitRouter from "./unit.routes.js";
 import userRouter from "./user.routes.js";
 
@@ -14,5 +15,6 @@ router.use("/brands", brandRouter);
 router.use("/units", unitRouter);
 router.use("/products", productRouter);
 router.use("/users", userRouter);
+router.use("/stocks", stockRouter);
 
 export default router;
