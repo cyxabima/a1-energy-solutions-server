@@ -5,6 +5,7 @@ import {
 	logout,
 	me,
 	register,
+	updateProfileHandler,
 } from "../controllers/auth.controller.js";
 import verifyJwt from "../middlewares/auth.middleware.js";
 import { validate } from "../middlewares/validate.middleware.js";
@@ -12,6 +13,7 @@ import {
 	changePasswordSchema,
 	loginSchema,
 	registerSchema,
+	updateProfileSchema,
 } from "../validations/auth.validation.js";
 
 const router: ExpressRouter = Router();
@@ -25,6 +27,12 @@ router.patch(
 	verifyJwt,
 	validate(changePasswordSchema),
 	changePasswordHandler,
+);
+router.patch(
+	"/profile",
+	verifyJwt,
+	validate(updateProfileSchema),
+	updateProfileHandler,
 );
 
 export default router;

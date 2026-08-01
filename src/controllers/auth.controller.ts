@@ -9,6 +9,7 @@ import {
 	type SafeUser,
 	toSafeUser,
 	updatePassword,
+	updateUser,
 } from "../models/user.model.js";
 import type { AuthRequest, AuthUser } from "../types/index.js";
 import ApiError from "../utils/api-error.js";
@@ -17,6 +18,7 @@ import type {
 	ChangePasswordInput,
 	LoginInput,
 	RegisterInput,
+	UpdateProfileInput,
 } from "../validations/auth.validation.js";
 
 function generateToken(user: SafeUser): string {
@@ -139,4 +141,29 @@ export async function changePasswordHandler(req: Request, res: Response) {
 	return res
 		.status(200)
 		.json(new ApiResponse<null>(200, null, "Password updated successfully"));
+}
+
+export async function updateProfileHandler(req: Request, res: Response) {
+	const authReq = req as AuthRequest;
+	const body = req.body as UpdateProfileInput;
+
+	const update: { avatarUrl?: string | null } = {};
+	if (body.avatarUrl !== undefined) {
+		update.avatarUrl = body.avatarUrl || null;
+	}
+
+	const updatedUser = await updateUser(authReq.user?._id ?? "", update);
+	if (!updatedUser) {
+		throw new ApiError(404, "NOT_FOUND", "User not found");
+	}
+
+	return res
+		.status(200)
+		.json(
+			new ApiResponse<SafeUser>(
+				200,
+				updatedUser,
+				"Profile updated successfully",
+			),
+		);
 }

@@ -20,3 +20,9 @@ export const changePasswordSchema = z.object({
 });
 
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+export const updateProfileSchema = z.object({
+	avatarUrl: z.union([z.url().max(500), z.literal("")]).optional(),
+});
+
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

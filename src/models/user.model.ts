@@ -9,6 +9,7 @@ export interface User {
 	email: string;
 	password: string;
 	role: UserRole;
+	avatarUrl?: string;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -85,12 +86,18 @@ export async function getUsers(params: {
 
 export async function updateUser(
 	id: string,
-	data: { name?: string; email?: string; role?: string },
+	data: {
+		name?: string;
+		email?: string;
+		role?: string;
+		avatarUrl?: string | null;
+	},
 ): Promise<SafeUser | null> {
 	const update: Record<string, unknown> = { updatedAt: new Date() };
 	if (data.name !== undefined) update.name = data.name;
 	if (data.email !== undefined) update.email = data.email.toLowerCase();
 	if (data.role !== undefined) update.role = data.role;
+	if (data.avatarUrl !== undefined) update.avatarUrl = data.avatarUrl;
 
 	const result = await collection().findOneAndUpdate(
 		{ _id: new ObjectId(id) },
