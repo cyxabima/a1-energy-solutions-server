@@ -26,6 +26,6 @@ router.post(
 	createStockHandler,
 );
 
-router.delete("/:id", authorizeRoles(["ADMIN", "OWNER"]), deleteStockHandler);
+router.delete("/:id", authorizeRoles(["ADMIN"]), deleteStockHandler);
 
 export default router;

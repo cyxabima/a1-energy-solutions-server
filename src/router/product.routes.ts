@@ -33,6 +33,6 @@ router.put(
 	validate(updateProductSchema),
 	updateProductHandler,
 );
-router.delete("/:id", authorizeRoles(["ADMIN", "OWNER"]), deleteProductHandler);
+router.delete("/:id", authorizeRoles(["ADMIN"]), deleteProductHandler);
 
 export default router;

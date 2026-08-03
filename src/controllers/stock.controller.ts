@@ -263,8 +263,6 @@ export async function createStockHandler(req: Request, res: Response) {
 }
 
 export async function getStockMovementsHandler(req: Request, res: Response) {
-	const authReq = req as AuthRequest;
-
 	const search = typeof req.query.search === "string" ? req.query.search : "";
 	const product =
 		typeof req.query.product === "string" ? req.query.product : "";
@@ -285,11 +283,7 @@ export async function getStockMovementsHandler(req: Request, res: Response) {
 	if (product) filters.product = product;
 	if (type) filters.type = type;
 
-	if (authReq.user?.role !== "ADMIN" && authReq.user?._id) {
-		filters.owner = authReq.user._id;
-	} else if (authReq.user?.role === "ADMIN" && owner) {
-		filters.owner = owner;
-	}
+	if (owner) filters.owner = owner;
 
 	const { movements, total } = await getMovements(filters);
 
@@ -319,8 +313,6 @@ export async function getStockMovementsHandler(req: Request, res: Response) {
 }
 
 export async function getStockSummaryHandler(req: Request, res: Response) {
-	const authReq = req as AuthRequest;
-
 	const search = typeof req.query.search === "string" ? req.query.search : "";
 	const category =
 		typeof req.query.category === "string" ? req.query.category : "";
@@ -337,11 +329,7 @@ export async function getStockSummaryHandler(req: Request, res: Response) {
 	const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
 
 	const productFilters: Record<string, string> = {};
-	if (authReq.user?.role !== "ADMIN" && authReq.user?._id) {
-		productFilters.owner = authReq.user._id;
-	} else if (authReq.user?.role === "ADMIN" && owner) {
-		productFilters.owner = owner;
-	}
+	if (owner) productFilters.owner = owner;
 
 	const { getProducts } = await import("../models/product.model.js");
 	const { products, total } = await getProducts({

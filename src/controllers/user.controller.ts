@@ -1,6 +1,8 @@
+import bcrypt from "bcrypt";
 import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
 import {
+	createUser,
 	findUserByEmail,
 	getUsers,
 	type SafeUser,
@@ -8,7 +10,10 @@ import {
 } from "../models/user.model.js";
 import ApiError from "../utils/api-error.js";
 import ApiResponse from "../utils/api-response.js";
-import type { UpdateUserBody } from "../validations/user.validation.js";
+import type {
+	CreateUserBody,
+	UpdateUserBody,
+} from "../validations/user.validation.js";
 
 type IdParam = { id: string };
 
@@ -20,6 +25,28 @@ function validateId(id: string | undefined, label: string): string {
 		throw new ApiError(400, "BAD_REQUEST", `Invalid ${label} format`);
 	}
 	return id;
+}
+
+export async function createUserHandler(req: Request, res: Response) {
+	const body = req.body as CreateUserBody;
+
+	const existing = await findUserByEmail(body.email);
+	if (existing) {
+		throw new ApiError(409, "CONFLICT", "Email already in use");
+	}
+
+	const hashedPassword = await bcrypt.hash(body.password, 10);
+
+	const user = await createUser({
+		name: body.name,
+		email: body.email.toLowerCase(),
+		password: hashedPassword,
+		role: body.role,
+	});
+
+	return res
+		.status(201)
+		.json(new ApiResponse<SafeUser>(201, user, "User created successfully"));
 }
 
 export async function getUsersHandler(req: Request, res: Response) {

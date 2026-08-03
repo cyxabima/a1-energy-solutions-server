@@ -150,8 +150,6 @@ export async function createProductHandler(req: Request, res: Response) {
 }
 
 export async function getProductsHandler(req: Request, res: Response) {
-	const authReq = req as AuthRequest;
-
 	const search = typeof req.query.search === "string" ? req.query.search : "";
 	const barcode =
 		typeof req.query.barcode === "string" ? req.query.barcode : "";
@@ -164,11 +162,7 @@ export async function getProductsHandler(req: Request, res: Response) {
 	const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
 
 	const filters: Record<string, string> = {};
-	if (authReq.user?.role !== "ADMIN" && authReq.user?._id) {
-		filters.owner = authReq.user._id;
-	} else if (authReq.user?.role === "ADMIN" && owner) {
-		filters.owner = owner;
-	}
+	if (owner) filters.owner = owner;
 
 	const { products, total } = await getProducts({
 		search,
@@ -291,23 +285,11 @@ export async function deleteProductHandler(
 	req: Request<IdParam>,
 	res: Response,
 ) {
-	const authReq = req as AuthRequest;
 	const id = validateId(req.params.id, "product ID");
 
 	const existing = await findProductById(id);
 	if (!existing) {
 		throw new ApiError(404, "NOT_FOUND", "Product not found");
-	}
-
-	if (
-		authReq.user?.role === "OWNER" &&
-		existing.owner.toString() !== authReq.user._id
-	) {
-		throw new ApiError(
-			403,
-			"FORBIDDEN",
-			"You can only delete your own products",
-		);
 	}
 
 	const currentStock = await getCurrentStock(id);

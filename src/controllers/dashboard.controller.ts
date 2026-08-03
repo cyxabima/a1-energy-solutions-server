@@ -3,7 +3,6 @@ import {
 	type DashboardStats,
 	getDashboardStats,
 } from "../models/dashboard.model.js";
-import type { AuthRequest } from "../types/index.js";
 import ApiError from "../utils/api-error.js";
 import ApiResponse from "../utils/api-response.js";
 
@@ -17,15 +16,8 @@ const VALID_SECTIONS = [
 ];
 
 export async function getDashboardStatsHandler(req: Request, res: Response) {
-	const authReq = req as AuthRequest;
-
 	const ownerParam = typeof req.query.owner === "string" ? req.query.owner : "";
-	let owner: string | undefined;
-	if (authReq.user?.role !== "ADMIN" && authReq.user?._id) {
-		owner = authReq.user._id;
-	} else if (authReq.user?.role === "ADMIN" && ownerParam) {
-		owner = ownerParam;
-	}
+	const owner = ownerParam || undefined;
 
 	const includeParam =
 		typeof req.query.include === "string" ? req.query.include : "";
