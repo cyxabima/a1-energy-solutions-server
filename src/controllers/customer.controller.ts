@@ -38,7 +38,6 @@ export async function createCustomerHandler(req: Request, res: Response) {
 
 	const input: {
 		name: string;
-		type: Customer["type"];
 		createdBy: ObjectId;
 		phone?: string;
 		email?: string;
@@ -46,7 +45,6 @@ export async function createCustomerHandler(req: Request, res: Response) {
 		notes?: string;
 	} = {
 		name: body.name,
-		type: body.type,
 		createdBy: new ObjectId(authReq.user?._id ?? ""),
 	};
 	if (body.phone !== undefined) input.phone = body.phone;
@@ -71,13 +69,9 @@ export async function getCustomersHandler(req: Request, res: Response) {
 		page: number;
 		limit: number;
 		search?: string;
-		type?: string;
 	} = { page, limit };
 	if (typeof req.query.search === "string" && req.query.search.trim()) {
 		params.search = req.query.search.trim();
-	}
-	if (typeof req.query.type === "string" && req.query.type.trim()) {
-		params.type = req.query.type.trim();
 	}
 
 	const { customers, total } = await getCustomers(params);
@@ -146,7 +140,6 @@ export async function updateCustomerHandler(
 	if (body.phone !== undefined) update.phone = body.phone;
 	if (body.email !== undefined) update.email = body.email;
 	if (body.address !== undefined) update.address = body.address;
-	if (body.type !== undefined) update.type = body.type;
 	if (body.notes !== undefined) update.notes = body.notes;
 
 	const customer = await updateCustomer(id, update);

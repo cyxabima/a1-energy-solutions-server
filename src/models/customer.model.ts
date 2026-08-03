@@ -1,15 +1,12 @@
 import { type Collection, ObjectId, type OptionalId } from "mongodb";
 import { getDb } from "../db/index.js";
 
-export type CustomerType = "CASH" | "RETAILER" | "CONTRACTOR";
-
 export interface Customer {
 	_id: ObjectId;
 	name: string;
 	phone?: string;
 	email?: string;
 	address?: string;
-	type: CustomerType;
 	notes?: string;
 	createdBy: ObjectId;
 	createdAt: Date;
@@ -21,7 +18,7 @@ export type CreateCustomerInput = Omit<
 	"_id" | "createdAt" | "updatedAt"
 >;
 export type UpdateCustomerInput = Partial<
-	Pick<Customer, "name" | "phone" | "email" | "address" | "type" | "notes">
+	Pick<Customer, "name" | "phone" | "email" | "address" | "notes">
 >;
 
 export interface CustomerStats {
@@ -42,7 +39,6 @@ function collection(): Collection<OptionalId<Customer>> {
 export async function ensureIndexes(): Promise<void> {
 	const col = collection();
 	await col.createIndex({ name: 1 });
-	await col.createIndex({ type: 1 });
 }
 
 export async function createCustomer(
@@ -66,7 +62,6 @@ export async function findCustomerById(id: string): Promise<Customer | null> {
 
 export async function getCustomers(params: {
 	search?: string;
-	type?: string;
 	page?: number;
 	limit?: number;
 }): Promise<{ customers: Customer[]; total: number }> {
@@ -76,7 +71,6 @@ export async function getCustomers(params: {
 		const regex = new RegExp(escapeRegex(params.search), "i");
 		query.$or = [{ name: regex }, { phone: regex }, { email: regex }];
 	}
-	if (params.type) query.type = params.type;
 
 	const page = Math.max(1, params.page ?? 1);
 	const limit = Math.min(100, Math.max(1, params.limit ?? 20));
@@ -104,7 +98,6 @@ export async function updateCustomer(
 	if (data.phone !== undefined) update.phone = data.phone;
 	if (data.email !== undefined) update.email = data.email;
 	if (data.address !== undefined) update.address = data.address;
-	if (data.type !== undefined) update.type = data.type;
 	if (data.notes !== undefined) update.notes = data.notes;
 
 	return collection().findOneAndUpdate(
