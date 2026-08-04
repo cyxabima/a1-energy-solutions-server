@@ -1,4 +1,4 @@
-# Stock Management System
+# Stock & Sales Management System
 
 ## Overview
 
@@ -6,8 +6,10 @@ FIFO (First-In-First-Out) inventory tracking with batch-level cost management.
 Every stock change is recorded as an immutable audit record. Current stock is
 always computed from movements — never stored as a denormalized counter.
 
-Multi-tenancy: products have an `owner`. Non-admin users only see their own
-stock. Admins can view and filter across all owners.
+One-business model: all authenticated users see all data. Products and stock
+carry an `owner` for attribution only; `?owner=` is an optional filter anyone
+may pass for accounting views. Sales (invoices) confirm automatically creates
+FIFO stock OUT movements and stamps cost of goods sold (COGS).
 
 ---
 
@@ -636,51 +638,61 @@ Delete a stock movement with batch restoration safety.
 
 ---
 
-## Future: Invoicing Integration
+## Invoicing Integration
 
 When a sale is confirmed via invoice, it automatically creates stock OUT
 movements. This keeps stock in sync with sales and provides automatic
 cost of goods sold (COGS) calculation from batch consumptions.
 
-### Proposed Invoice Model
+### Invoice
 
-```typescript
-interface Invoice {
-  _id: ObjectId;
-  invoiceNumber: string;           // auto-generated, e.g., INV-000001
-  customer: ObjectId;              // reference to customer
-  items: InvoiceItem[];
-  subtotal: number;
-  tax: number;
-  total: number;
-  status: "DRAFT" | "CONFIRMED" | "PAID" | "CANCELLED";
-  reference?: string;              // external reference
-  createdBy: ObjectId;
-  createdAt: Date;
-  updatedAt: Date;
-}
+| Field         | Type     | Description                                     |
+|---------------|----------|-------------------------------------------------|
+| invoiceNumber | string   | Auto-generated, e.g., INV-000001 (counters)     |
+| customer      | ObjectId | Optional — omitted means walk-in customer       |
+| items         | array    | See InvoiceItem below                           |
+| subtotal      | number   | Sum of item totals (qty × unitPrice − line disc)|
+| discount      | number   | Invoice-level discount (money)                  |
+| taxRate       | number   | Percent 0–100, default from `VAT_RATE` env (0)  |
+| tax           | number   | (subtotal − discount) × taxRate / 100           |
+| total         | number   | subtotal − discount + tax                       |
+| paidAmount    | number   | Total payments applied ($inc kept in sync)      |
+| balance       | number   | total − paidAmount (0 means fully paid)         |
+| status        | enum     | DRAFT, CONFIRMED, CANCELLED                     |
+| reference     | string   | External reference                              |
+| confirmedAt   | Date     | Set on confirm                                  |
+| cancelledAt/By| Date/id  | Set on cancel                                   |
+| createdBy     | ObjectId | Who created the invoice (cashier)               |
 
-interface InvoiceItem {
-  product: ObjectId;
-  quantity: number;
-  unitPrice: number;
-  total: number;
-  stockMovementId?: ObjectId;      // linked stock OUT (set on confirm)
-  batchConsumutions?: BatchConsumution[];  // cost breakdown
-  costOfGoodsSold?: number;        // sum of (qty * buyingPrice) from batches
-}
-```
+InvoiceItem:
 
-### Proposed Endpoints
+| Field               | Type             | Description                          |
+|---------------------|------------------|--------------------------------------|
+| product             | ObjectId         | Product sold                         |
+| quantity            | number           | Units sold                           |
+| unitPrice           | number           | Manual POS price per line            |
+| discount            | number           | Per-line discount (money)            |
+| total               | number           | (qty × unitPrice) − line discount    |
+| stockMovementId     | ObjectId         | Linked stock OUT (set on confirm)    |
+| batchConsumptions   | array            | Cost breakdown from FIFO consumption |
+| costOfGoodsSold     | number           | Sum of qty × buyingPrice from batches|
 
-| Method | Path                  | Description                          |
-|--------|-----------------------|--------------------------------------|
-| POST   | /invoices/            | Create invoice (status: DRAFT)       |
-| PATCH  | /invoices/:id         | Update invoice                       |
-| POST   | /invoices/:id/confirm | Confirm → auto-create stock OUT      |
-| GET    | /invoices/            | List invoices (paginated)            |
-| GET    | /invoices/:id         | Get invoice detail                   |
-| DELETE | /invoices/:id         | Delete invoice (only if DRAFT)       |
+Price is typed manually per line — there is no `sellingPrice` on Product.
+
+### Endpoints
+
+| Method | Path                     | Description                              | Roles            |
+|--------|--------------------------|------------------------------------------|------------------|
+| POST   | /invoices/               | Create DRAFT (validates products exist)  | ADMIN/OWNER/STAFF|
+| GET    | /invoices/               | List (?search=&status=&customer=&page=)  | any auth         |
+| GET    | /invoices/:id            | Detail incl. payments + item COGS        | any auth         |
+| PATCH  | /invoices/:id            | Update DRAFT only (recomputes totals)    | ADMIN/OWNER/STAFF|
+| POST   | /invoices/:id/confirm    | FIFO OUT + COGS + stamp items            | ADMIN/OWNER/STAFF|
+| POST   | /invoices/:id/cancel     | Cancel DRAFT/CONFIRMED (restores stock)  | ADMIN/OWNER/STAFF|
+| DELETE | /invoices/:id            | Delete DRAFT only                        | ADMIN only       |
+| POST   | /invoices/:invoiceId/payments | Add payment (CONFIRMED only)         | ADMIN/OWNER/STAFF|
+| GET    | /payments/               | List (?invoice=&method=&page=)           | any auth         |
+| DELETE | /payments/:id            | Delete a payment (reverses paidAmount)   | ADMIN only       |
 
 ### Confirm Invoice Flow
 
@@ -688,69 +700,69 @@ interface InvoiceItem {
 POST /invoices/:id/confirm
   │
   ▼
-Find invoice (must be DRAFT)
+Find invoice (must be DRAFT, else INVOICE_NOT_DRAFT)
   │
   ▼
-For each item in invoice.items:
-  │
-  ├── consumeBatchesFIFO(product, quantity)
-  │     → BatchConsumution[]
-  │
-  ├── Create StockMovement
-  │     type: "OUT"
-  │     batchConsumutions: [...]
-  │     reference: invoice.invoiceNumber
-  │
-  └── Update InvoiceItem:
-        stockMovementId = movement._id
-        batchConsumutions = [...]
-        costOfGoodsSold = sum(qty * buyingPrice)
+Pre-check stock per item (getCurrentStock) → INSUFFICIENT_STOCK if short
   │
   ▼
-Set invoice.status = "CONFIRMED"
+For each item:
+  ├── consumeBatchesFIFO(product, quantity) → BatchConsumption[]
+  ├── compute COGS = sum(qty × buyingPrice)
+  └── build OUT StockMovement (reason: "Sale - INV-xxxx", salePrice: unitPrice)
   │
   ▼
-Return updated invoice with COGS per item
+createMovements (bulk) → attach stockMovementId per item
+  │
+  ▼
+markConfirmed (status = CONFIRMED, confirmedAt)
+  │
+  ▼
+On any failure: rollback (restore consumed batches + delete movements), rethrow
 ```
 
 ### Cancel Invoice Flow
 
-```
-POST /invoices/:id/cancel
-  │
-  ▼
-Find invoice (must be CONFIRMED)
-  │
-  ▼
-For each item with stockMovementId:
-  │
-  ├── Find stock movement
-  │
-  ├── Restore batches
-  │     (reverse FIFO: increment remainingQty)
-  │
-  └── Delete stock movement
-  │
-  ▼
-Set invoice.status = "CANCELLED"
-  │
-  ▼
-Return updated invoice
-```
+- **DRAFT**: set status CANCELLED (no stock effect).
+- **CONFIRMED**: blocked if `paidAmount > 0` (INVOICE_HAS_PAYMENTS). Otherwise
+  delete each linked OUT movement and restore every batch consumption
+  (reverse FIFO via restoreBatch), then set CANCELLED.
+
+### Payments
+
+| Field     | Type    | Description                               |
+|-----------|---------|-------------------------------------------|
+| invoice   | ObjectId| Invoice this payment applies to           |
+| amount    | number  | Money paid                                |
+| method    | enum    | CASH, CARD, TRANSFER, CHEQUE              |
+| reference | string  | Optional (cheque number, transfer ref)    |
+| createdBy | ObjectId| Who recorded the payment                  |
+
+Multiple payments per invoice are allowed. A payment requires the invoice to be
+CONFIRMED (`INVOICE_NOT_CONFIRMED`) and `amount ≤ balance`
+(`INVALID_PAYMENT_AMOUNT`). Adding/removing a payment `$inc`s `paidAmount` and
+`balance` on the invoice. "Paid" is derived on the client as `balance === 0`.
 
 ---
 
 ## Error Codes
 
-| ErrorType          | HTTP | When                                         |
-|--------------------|------|----------------------------------------------|
-| INSUFFICIENT_STOCK | 400  | OUT/TRANSFER/negative ADJUSTMENT exceeds available stock |
-| BATCH_CONSUMED     | 400  | Trying to delete an IN whose batch was consumed |
-| PRODUCT_HAS_STOCK  | 400  | Trying to delete a product with current stock > 0 |
-| FORBIDDEN          | 403  | OWNER trying to delete another owner's product |
-| INVALID_PASSWORD   | 400  | Current password is incorrect during password change |
-| NOT_FOUND          | 404  | Product, movement, or user not found         |
-| BAD_REQUEST        | 400  | Missing required fields or invalid type      |
+| ErrorType            | HTTP | When                                              |
+|----------------------|------|---------------------------------------------------|
+| INSUFFICIENT_STOCK   | 400  | OUT/TRANSFER/negative ADJUSTMENT exceeds available stock |
+| BATCH_CONSUMED       | 400  | Trying to delete an IN whose batch was consumed   |
+| PRODUCT_HAS_STOCK    | 400  | Trying to delete a product with current stock > 0 |
+| CUSTOMER_HAS_INVOICES| 409  | Trying to delete a customer that has invoices     |
+| INVOICE_NOT_DRAFT    | 400  | Edit/confirm/delete an invoice that is not DRAFT  |
+| INVOICE_NOT_CONFIRMED| 400  | Adding a payment to a non-CONFIRMED invoice       |
+| INVOICE_HAS_PAYMENTS | 400  | Cancelling a CONFIRMED invoice with payments      |
+| INVALID_PAYMENT_AMOUNT | 400| Payment amount exceeds remaining balance          |
+| PRODUCT_NOT_FOUND    | 404  | An invoice item references a missing product      |
+| CUSTOMER_NOT_FOUND   | 404  | Invoice references a missing customer             |
+| FORBIDDEN            | 403  | Role insufficient for the operation               |
+| INVALID_PASSWORD     | 400  | Current password is incorrect during password change |
+| NOT_FOUND            | 404  | Product, movement, user, invoice, customer not found |
+| BAD_REQUEST          | 400  | Missing required fields or invalid type           |
 
 ---
 
@@ -783,7 +795,7 @@ Return updated invoice
 - Filterable list of all movements
 - Type filter (IN / OUT / ADJUSTMENT / TRANSFER)
 - Product search
-- Owner filter (admin only)
+- Owner filter (optional, for accounting views)
 - Each movement: product name, type badge, quantity, prices, reason, date
 
 ### Inventory Value Display
@@ -795,8 +807,8 @@ Return updated invoice
 ### Product Deletion Safety
 
 - Products with `currentStock > 0` cannot be deleted (returns 400 PRODUCT_HAS_STOCK)
-- OWNER role can only delete their own products (returns 403 FORBIDDEN)
-- ADMIN can delete any product regardless of stock or owner
+- Product, stock movement, invoice, and payment deletion is ADMIN-only
+  (returns 403 FORBIDDEN for other roles)
 - Frontend should show stock level before allowing delete action
 
 ### Low Stock Filter

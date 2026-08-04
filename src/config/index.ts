@@ -15,4 +15,5 @@ export const config = {
 	nodeEnv: process.env.NODE_ENV || "development",
 	mongodbUri: requireEnv("MONGODB_URI"),
 	secret: requireEnv("SECRET"),
+	vatRate: Number(process.env.VAT_RATE) || 0,
 } as const;
