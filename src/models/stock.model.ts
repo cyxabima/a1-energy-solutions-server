@@ -208,13 +208,11 @@ export async function getMovements(params: {
 				reference: 1,
 				toOwner: {
 					$cond: {
-						if: {
-							$gt: [{ $size: { $ifNull: ["$toOwnerDoc", []] } }, 0],
-						},
+						if: { $ne: ["$toOwnerDoc", null] },
 						// biome-ignore lint/suspicious/noThenProperty: MongoDB
 						then: {
-							_id: { $arrayElemAt: ["$toOwnerDoc._id", 0] },
-							name: { $arrayElemAt: ["$toOwnerDoc.name", 0] },
+							_id: "$toOwnerDoc._id",
+							name: "$toOwnerDoc.name",
 						},
 						else: null,
 					},
@@ -299,13 +297,11 @@ export async function getProductStockHistory(params: {
 				reference: 1,
 				toOwner: {
 					$cond: {
-						if: {
-							$gt: [{ $size: { $ifNull: ["$toOwnerDoc", []] } }, 0],
-						},
+						if: { $ne: ["$toOwnerDoc", null] },
 						// biome-ignore lint/suspicious/noThenProperty: MongoDB
 						then: {
-							_id: { $arrayElemAt: ["$toOwnerDoc._id", 0] },
-							name: { $arrayElemAt: ["$toOwnerDoc.name", 0] },
+							_id: "$toOwnerDoc._id",
+							name: "$toOwnerDoc.name",
 						},
 						else: null,
 					},

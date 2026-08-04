@@ -99,6 +99,12 @@ export async function findProductById(id: string): Promise<Product | null> {
 	return collection().findOne({ _id: new ObjectId(id) });
 }
 
+export async function findProductsByIds(ids: ObjectId[]): Promise<Product[]> {
+	return collection()
+		.find({ _id: { $in: ids } })
+		.toArray() as Promise<Product[]>;
+}
+
 export async function findProductByBarcode(
 	barcode: string,
 ): Promise<Product | null> {
