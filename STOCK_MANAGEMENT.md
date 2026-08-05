@@ -752,7 +752,7 @@ CONFIRMED (`INVOICE_NOT_CONFIRMED`) and `amount ≤ balance`
 | INSUFFICIENT_STOCK   | 400  | OUT/TRANSFER/negative ADJUSTMENT exceeds available stock |
 | BATCH_CONSUMED       | 400  | Trying to delete an IN whose batch was consumed   |
 | PRODUCT_HAS_STOCK    | 400  | Trying to delete a product with current stock > 0 |
-| CUSTOMER_HAS_INVOICES| 409  | Trying to delete a customer that has invoices     |
+| CUSTOMER_HAS_INVOICES| 409  | Trying to delete a customer that has confirmed invoices (draft/cancelled invoices are unlinked and allowed) |
 | INVOICE_NOT_DRAFT    | 400  | Edit/confirm/delete an invoice that is not DRAFT  |
 | INVOICE_NOT_CONFIRMED| 400  | Adding a payment to a non-CONFIRMED invoice       |
 | INVOICE_HAS_PAYMENTS | 400  | Cancelling a CONFIRMED invoice with payments      |
@@ -823,3 +823,55 @@ CONFIRMED (`INVOICE_NOT_CONFIRMED`) and `amount ≤ balance`
 - `newPassword` must be 8-128 characters
 - Returns 400 INVALID_PASSWORD if current password is wrong
 - Frontend should show success message and optionally log user out
+
+---
+
+## Reports
+
+Financial aggregation over CONFIRMED invoices only (DRAFT/CANCELLED excluded).
+Money is rounded to 2 decimals. All endpoints require any authenticated role.
+
+### Endpoints
+
+| Method | Path               | Query                                      | Description                         |
+|--------|--------------------|--------------------------------------------|-------------------------------------|
+| GET    | /reports/sales     | period=day\|month, from, to, customer, createdBy | Revenue/COGS/profit by day or month |
+| GET    | /reports/products  | from, to, sort=revenue\|quantity\|profit, limit | Top selling products               |
+| GET    | /reports/customers | from, to, limit                            | Top customers (walk-in = customer:null) |
+
+Defaults: `period=day`, range = last 30 days, `limit=10` (cap 100). Invalid
+`period`/`sort`/dates → 400 BAD_REQUEST.
+
+### Metrics
+
+| Metric  | Definition                                  |
+|---------|---------------------------------------------|
+| revenue | Σ (subtotal − discount) — net sales before tax |
+| cogs    | Σ item costOfGoodsSold (FIFO-stamped)       |
+| profit  | revenue − cogs                              |
+| tax     | Σ tax                                       |
+| total   | Σ total (gross, incl. tax)                  |
+
+### Invoice detail profit
+
+`GET /invoices/:id` also returns per-item `grossProfit`
+(= item.total − costOfGoodsSold on confirmed items) and
+`summary: { cogs, profit }` where profit = (subtotal − discount) − cogs.
+
+### Dashboard sales KPIs
+
+`GET /dashboard/stats` supports `?include=sales` (combinable with other
+sections). Returns a `sales` object:
+
+| Field          | Description                                        |
+|----------------|----------------------------------------------------|
+| revenueToday   | Σ (subtotal − discount) for today (UTC)            |
+| revenueMonth   | Σ (subtotal − discount) for the current month      |
+| invoicesMonth  | Count of CONFIRMED invoices this month             |
+| unpaidBalance  | Σ balance over all CONFIRMED invoices (all-time)   |
+| topProducts    | Top 5 products by revenue this month               |
+| salesTrend7d   | Daily revenue, last 7 days, zero-filled            |
+| salesTrend6m   | Monthly revenue, last 6 months, zero-filled        |
+
+Day/month boundaries are UTC. The `?owner=` filter does not apply to the sales
+section (invoices are business-level records).

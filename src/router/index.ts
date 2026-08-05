@@ -7,6 +7,7 @@ import dashboardRouter from "./dashboard.routes.js";
 import invoiceRouter from "./invoice.routes.js";
 import paymentRouter from "./payment.routes.js";
 import productRouter from "./product.routes.js";
+import reportRouter from "./report.routes.js";
 import stockRouter from "./stock.routes.js";
 import unitRouter from "./unit.routes.js";
 import userRouter from "./user.routes.js";
@@ -22,6 +23,7 @@ router.use("/dashboard", dashboardRouter);
 router.use("/brands", brandRouter);
 router.use("/units", unitRouter);
 router.use("/products", productRouter);
+router.use("/reports", reportRouter);
 router.use("/users", userRouter);
 router.use("/stocks", stockRouter);
 

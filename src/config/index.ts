@@ -16,4 +16,10 @@ export const config = {
 	mongodbUri: requireEnv("MONGODB_URI"),
 	secret: requireEnv("SECRET"),
 	vatRate: Number(process.env.VAT_RATE) || 0,
+	corsOrigins: process.env.CORS_ORIGINS?.split(",")
+		.map((origin) => origin.trim())
+		.filter(Boolean) ?? [
+		"http://localhost:5173",
+		"https://hms-frontend-gray-eight.vercel.app",
+	],
 } as const;

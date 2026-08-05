@@ -21,6 +21,10 @@ function collection(): Collection<OptionalId<User>> {
 	return getDb().collection<OptionalId<User>>("users");
 }
 
+export async function ensureIndexes(): Promise<void> {
+	await collection().createIndex({ email: 1 }, { unique: true });
+}
+
 export async function createUser(data: CreateUserInput): Promise<SafeUser> {
 	const now = new Date();
 	const doc: OptionalId<User> = {

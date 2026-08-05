@@ -1,14 +1,12 @@
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import express, { type Express } from "express";
+import { config } from "./config/index.js";
 import { errorHandler } from "./middlewares/error.middleware.js";
 import router from "./router/index.js";
 
 const corsOptions = {
-	origin: [
-		"http://localhost:5173",
-		"https://hms-frontend-gray-eight.vercel.app",
-	],
+	origin: config.corsOrigins,
 	methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
 	allowedHeaders: ["Content-Type", "Authorization"],
 	credentials: true,

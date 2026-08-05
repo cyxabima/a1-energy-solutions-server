@@ -1,5 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "../db/index.js";
+import { round2 } from "./invoice.model.js";
+import { getTopProducts, type ProductReportRow } from "./report.model.js";
 
 const LOW_STOCK_THRESHOLD = 5;
 const TOP_PRODUCTS_LIMIT = 5;
@@ -46,6 +48,21 @@ export interface DashboardOverview {
 	lowStockCount: number;
 }
 
+export interface DashboardSalesTrendPoint {
+	date: string;
+	revenue: number;
+}
+
+export interface DashboardSales {
+	revenueToday: number;
+	revenueMonth: number;
+	invoicesMonth: number;
+	unpaidBalance: number;
+	topProducts: ProductReportRow[];
+	salesTrend7d: DashboardSalesTrendPoint[];
+	salesTrend6m: DashboardSalesTrendPoint[];
+}
+
 export interface DashboardStats {
 	overview: DashboardOverview;
 	movementTrends: DashboardTrendPoint[];
@@ -55,6 +72,7 @@ export interface DashboardStats {
 	lowStockProducts: DashboardProductMetric[];
 	categoryBreakdown: DashboardBreakdownItem[];
 	brandBreakdown: DashboardBreakdownItem[];
+	sales: DashboardSales;
 }
 
 interface BatchRow {
@@ -146,6 +164,15 @@ export async function getDashboardStats(params: {
 		lowStockProducts: [],
 		categoryBreakdown: [],
 		brandBreakdown: [],
+		sales: {
+			revenueToday: 0,
+			revenueMonth: 0,
+			invoicesMonth: 0,
+			unpaidBalance: 0,
+			topProducts: [],
+			salesTrend7d: [],
+			salesTrend6m: [],
+		},
 	};
 
 	const jobs: Promise<void>[] = [];
@@ -428,6 +455,131 @@ export async function getDashboardStats(params: {
 						.aggregate(recentPipeline)
 						.toArray()) as unknown as RecentMovement[];
 				}
+			})(),
+		);
+	}
+
+	if (wants("sales")) {
+		jobs.push(
+			(async () => {
+				const today = new Date();
+				const todayKey = utcDateKey(today);
+				const monthKey = utcMonthKey(today);
+				const sixMonthsAgo = new Date(
+					Date.UTC(
+						today.getUTCFullYear(),
+						today.getUTCMonth() - (TREND_MONTHS - 1),
+						1,
+					),
+				);
+				const monthStart = new Date(
+					Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1),
+				);
+
+				const invoicesCol = getDb().collection("invoices");
+
+				const dailyRows = (await invoicesCol
+					.aggregate([
+						{
+							$match: {
+								status: "CONFIRMED",
+								confirmedAt: { $gte: sixMonthsAgo },
+							},
+						},
+						{
+							$group: {
+								_id: {
+									$dateToString: {
+										format: "%Y-%m-%d",
+										date: "$confirmedAt",
+									},
+								},
+								revenue: {
+									$sum: { $subtract: ["$subtotal", "$discount"] },
+								},
+								totalInvoices: { $sum: 1 },
+							},
+						},
+					])
+					.toArray()) as unknown as {
+					_id: string;
+					revenue?: number;
+					totalInvoices?: number;
+				}[];
+
+				const dailyMap = new Map(
+					dailyRows.map((row) => [
+						row._id,
+						{
+							revenue: row.revenue ?? 0,
+							totalInvoices: row.totalInvoices ?? 0,
+						},
+					]),
+				);
+
+				stats.sales.revenueToday = round2(dailyMap.get(todayKey)?.revenue ?? 0);
+
+				let revenueMonth = 0;
+				let invoicesMonth = 0;
+				for (const [date, row] of dailyMap) {
+					if (date.startsWith(monthKey)) {
+						revenueMonth += row.revenue;
+						invoicesMonth += row.totalInvoices;
+					}
+				}
+				stats.sales.revenueMonth = round2(revenueMonth);
+				stats.sales.invoicesMonth = invoicesMonth;
+
+				const unpaidRows = (await invoicesCol
+					.aggregate([
+						{ $match: { status: "CONFIRMED" } },
+						{
+							$group: {
+								_id: null,
+								unpaid: { $sum: "$balance" },
+							},
+						},
+					])
+					.toArray()) as unknown as { unpaid?: number }[];
+				stats.sales.unpaidBalance = round2(unpaidRows[0]?.unpaid ?? 0);
+
+				const trend7d: DashboardSalesTrendPoint[] = [];
+				for (let i = TREND_DAYS - 1; i >= 0; i -= 1) {
+					const day = new Date(
+						Date.UTC(
+							today.getUTCFullYear(),
+							today.getUTCMonth(),
+							today.getUTCDate() - i,
+						),
+					);
+					const key = utcDateKey(day);
+					trend7d.push({
+						date: key,
+						revenue: round2(dailyMap.get(key)?.revenue ?? 0),
+					});
+				}
+				stats.sales.salesTrend7d = trend7d;
+
+				const trend6m: DashboardSalesTrendPoint[] = [];
+				for (let i = TREND_MONTHS - 1; i >= 0; i -= 1) {
+					const month = new Date(
+						Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - i, 1),
+					);
+					const key = utcMonthKey(month);
+					let revenue = 0;
+					for (const [date, row] of dailyMap) {
+						if (date.startsWith(key)) revenue += row.revenue;
+					}
+					trend6m.push({ date: key, revenue: round2(revenue) });
+				}
+				stats.sales.salesTrend6m = trend6m;
+
+				stats.sales.topProducts = await getTopProducts({
+					from: monthStart,
+					to: today,
+					sort: "revenue",
+					limit: TOP_PRODUCTS_LIMIT,
+				});
 			})(),
 		);
 	}

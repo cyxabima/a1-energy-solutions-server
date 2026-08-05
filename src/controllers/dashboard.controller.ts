@@ -13,6 +13,7 @@ const VALID_SECTIONS = [
 	"top",
 	"low",
 	"breakdowns",
+	"sales",
 ];
 
 export async function getDashboardStatsHandler(req: Request, res: Response) {
