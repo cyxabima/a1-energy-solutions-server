@@ -1,4 +1,4 @@
-import { type Db, MongoClient } from "mongodb";
+import { type ClientSession, type Db, MongoClient } from "mongodb";
 import { config } from "../config/index.js";
 
 let client: MongoClient;
@@ -20,6 +20,20 @@ export function getDb(): Db {
 		throw new Error("Database not initialized. Call connectDB() first.");
 	}
 	return db;
+}
+
+export async function withTransaction<T>(
+	fn: (session: ClientSession) => Promise<T>,
+): Promise<T> {
+	if (!client) {
+		throw new Error("Database not initialized. Call connectDB() first.");
+	}
+	const session = client.startSession();
+	try {
+		return await session.withTransaction(async () => fn(session));
+	} finally {
+		await session.endSession();
+	}
 }
 
 export async function closeDB(): Promise<void> {
