@@ -117,7 +117,25 @@ export async function countInvoicesByCustomer(
 ): Promise<number> {
 	return getDb()
 		.collection("invoices")
-		.countDocuments({ customer: new ObjectId(customerId) });
+		.countDocuments({
+			customer: new ObjectId(customerId),
+			status: "CONFIRMED",
+		});
+}
+
+export async function unassignCustomerFromInvoices(
+	customerId: string,
+): Promise<number> {
+	const result = await getDb()
+		.collection("invoices")
+		.updateMany(
+			{
+				customer: new ObjectId(customerId),
+				status: { $ne: "CONFIRMED" },
+			},
+			{ $unset: { customer: "" } },
+		);
+	return result.modifiedCount ?? 0;
 }
 
 export async function getCustomerStats(
