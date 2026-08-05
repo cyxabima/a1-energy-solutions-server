@@ -10,6 +10,7 @@ import {
 	getCustomerStats,
 	getCustomers,
 	type UpdateCustomerInput,
+	unassignCustomerFromInvoices,
 	updateCustomer,
 } from "../models/customer.model.js";
 import type { AuthRequest } from "../types/index.js";
@@ -170,10 +171,11 @@ export async function deleteCustomerHandler(
 		throw new ApiError(
 			409,
 			"CUSTOMER_HAS_INVOICES",
-			"Cannot delete: customer has invoices",
+			"Cannot delete: customer has confirmed invoices",
 		);
 	}
 
+	await unassignCustomerFromInvoices(id);
 	await deleteCustomer(id);
 
 	return res
