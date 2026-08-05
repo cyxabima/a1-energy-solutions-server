@@ -875,3 +875,28 @@ sections). Returns a `sales` object:
 
 Day/month boundaries are UTC. The `?owner=` filter does not apply to the sales
 section (invoices are business-level records).
+
+## Business settings
+
+Single business record (`_id: "business"`) used for the invoice letterhead
+(logo, business name, address, phone, tax/VAT number, footer note). `GET`
+returns a defaults template (empty strings) if never set.
+
+| Method | Path                  | Access           | Description                            |
+|--------|-----------------------|------------------|----------------------------------------|
+| GET    | /settings/business    | any auth         | Fetch business settings                |
+| PUT    | /settings/business    | ADMIN            | Create/update business settings        |
+
+`PUT` body (all optional except `businessName`):
+
+| Field        | Type   | Notes                                            |
+|--------------|--------|--------------------------------------------------|
+| businessName | string | required, ≤ 200 chars                            |
+| address      | string | default `""`, ≤ 500 chars                        |
+| phone        | string | default `""`, ≤ 50 chars                         |
+| email        | string | optional, must be a valid email                  |
+| vatNumber    | string | optional, ≤ 100 chars                            |
+| footerNote   | string | optional, ≤ 1000 chars                           |
+| logoUrl      | string | optional, http(s) URL or `data:image/...` URI    |
+
+Response shape: `{ businessName, address, phone, email, vatNumber, footerNote, logoUrl, updatedBy, updatedAt }`.
