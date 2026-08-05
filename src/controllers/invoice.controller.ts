@@ -1,8 +1,9 @@
 import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
+import { withTransaction } from "../db/index.js";
 import { findCustomerById } from "../models/customer.model.js";
 import {
-	adjustPaid,
+	adjustPaidIfPossible,
 	createInvoice,
 	deleteInvoice,
 	findInvoiceById,
@@ -16,7 +17,11 @@ import {
 	round2,
 	updateInvoice,
 } from "../models/invoice.model.js";
-import { createPayment, type Payment } from "../models/payment.model.js";
+import {
+	createPayment,
+	deletePayment,
+	type Payment,
+} from "../models/payment.model.js";
 import { findProductsByIds } from "../models/product.model.js";
 import {
 	type CreateStockMovementInput,
@@ -248,6 +253,7 @@ export async function updateInvoiceHandler(
 		taxRate?: number;
 		tax?: number;
 		total?: number;
+		balance?: number;
 		reference?: string;
 	} = {
 		subtotal,
@@ -255,6 +261,7 @@ export async function updateInvoiceHandler(
 		taxRate,
 		tax,
 		total,
+		balance: round2(total - existing.paidAmount),
 	};
 	if (body.items) update.items = nextItems;
 	if (body.customer) update.customer = new ObjectId(body.customer);
@@ -303,24 +310,26 @@ export async function confirmInvoiceHandler(
 	}
 
 	const userId = new ObjectId(authReq.user?._id ?? "");
-	const consumedBatches: { batchId: ObjectId; quantity: number }[] = [];
-	const createdMovements: ObjectId[] = [];
 
-	try {
+	await withTransaction(async (session) => {
+		const current = await findInvoiceById(id, session);
+		if (current?.status !== "DRAFT") {
+			throw new ApiError(
+				400,
+				"INVOICE_NOT_DRAFT",
+				"Only draft invoices can be confirmed",
+			);
+		}
+
 		const confirmedItems: InvoiceItem[] = [];
 		const movementsInput: CreateStockMovementInput[] = [];
 
-		for (const item of invoice.items) {
+		for (const item of current.items) {
 			const consumptions = await consumeBatchesFIFO(
 				item.product.toString(),
 				item.quantity,
+				session,
 			);
-			for (const consumption of consumptions) {
-				consumedBatches.push({
-					batchId: consumption.batchId,
-					quantity: consumption.quantity,
-				});
-			}
 
 			const cogs = round2(
 				consumptions.reduce((sum, c) => sum + c.quantity * c.buyingPrice, 0),
@@ -341,17 +350,14 @@ export async function confirmInvoiceHandler(
 				quantity: item.quantity,
 				type: "OUT",
 				salePrice: item.unitPrice,
-				reason: `Sale - ${invoice.invoiceNumber}`,
-				reference: invoice.invoiceNumber,
+				reason: `Sale - ${current.invoiceNumber}`,
+				reference: current.invoiceNumber,
 				batchConsumptions: consumptions,
 				createdBy: userId,
 			});
 		}
 
-		const movements = await createMovements(movementsInput);
-		for (const movement of movements) {
-			createdMovements.push(movement._id);
-		}
+		const movements = await createMovements(movementsInput, session);
 
 		const finalItems: InvoiceItem[] = confirmedItems.map((item, index) => {
 			const result: InvoiceItem = { ...item };
@@ -360,18 +366,8 @@ export async function confirmInvoiceHandler(
 			return result;
 		});
 
-		await markConfirmed(id, finalItems);
-	} catch (error) {
-		for (const consumption of consumedBatches) {
-			await restoreBatch(consumption.batchId, consumption.quantity).catch(
-				() => undefined,
-			);
-		}
-		for (const movementId of createdMovements) {
-			await deleteMovement(movementId.toString()).catch(() => undefined);
-		}
-		throw error;
-	}
+		await markConfirmed(id, finalItems, current.total, session);
+	});
 
 	const detail = await getInvoiceDetail(id);
 	return res
@@ -512,7 +508,15 @@ export async function addPaymentHandler(
 	if (body.reference !== undefined) input.reference = body.reference;
 
 	const payment = await createPayment(input);
-	await adjustPaid(invoiceId, amount);
+	const updated = await adjustPaidIfPossible(invoiceId, amount);
+	if (!updated) {
+		await deletePayment(payment._id.toString()).catch(() => undefined);
+		throw new ApiError(
+			400,
+			"INVALID_PAYMENT_AMOUNT",
+			`Payment exceeds remaining balance. Balance: ${invoice.balance}, amount: ${amount}`,
+		);
+	}
 
 	return res
 		.status(201)

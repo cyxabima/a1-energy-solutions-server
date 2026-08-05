@@ -1,4 +1,9 @@
-import { type Collection, ObjectId, type OptionalId } from "mongodb";
+import {
+	type ClientSession,
+	type Collection,
+	ObjectId,
+	type OptionalId,
+} from "mongodb";
 import { getDb } from "../db/index.js";
 import { findProductsByIds, type Product } from "./product.model.js";
 import type { BatchConsumption } from "./stock-batch.model.js";
@@ -68,6 +73,7 @@ export interface InvoiceDetail {
 	createdBy: { _id: ObjectId; name: string };
 	items: InvoiceDetailItem[];
 	payments: InvoicePayment[];
+	summary: InvoiceDetailSummary;
 }
 
 export interface InvoiceDetailItem {
@@ -79,6 +85,12 @@ export interface InvoiceDetailItem {
 	stockMovementId?: ObjectId;
 	batchConsumptions?: BatchConsumption[];
 	costOfGoodsSold?: number;
+	grossProfit?: number;
+}
+
+export interface InvoiceDetailSummary {
+	cogs: number;
+	profit: number;
 }
 
 export interface InvoicePayment {
@@ -109,6 +121,7 @@ export async function ensureIndexes(): Promise<void> {
 	await col.createIndex({ status: 1 });
 	await col.createIndex({ createdBy: 1 });
 	await col.createIndex({ createdAt: -1 });
+	await col.createIndex({ status: 1, confirmedAt: -1 });
 }
 
 async function generateInvoiceNumber(): Promise<string> {
@@ -139,8 +152,14 @@ export async function createInvoice(
 	return { ...doc, _id: result.insertedId } as Invoice;
 }
 
-export async function findInvoiceById(id: string): Promise<Invoice | null> {
-	return collection().findOne({ _id: new ObjectId(id) });
+export async function findInvoiceById(
+	id: string,
+	session?: ClientSession,
+): Promise<Invoice | null> {
+	return collection().findOne(
+		{ _id: new ObjectId(id) },
+		session ? { session } : undefined,
+	) as Promise<Invoice | null>;
 }
 
 export async function getInvoices(params: {
@@ -266,6 +285,21 @@ export async function getInvoiceDetail(
 			.toArray(),
 	]);
 
+	const paymentCreatorIds = [
+		...new Set(payments.map((payment) => payment.createdBy.toString())),
+	].map((value) => new ObjectId(value));
+	const paymentCreators =
+		paymentCreatorIds.length > 0
+			? getDb()
+					.collection("users")
+					.find({ _id: { $in: paymentCreatorIds } })
+					.toArray()
+			: Promise.resolve([]);
+	const paymentCreatorMap = new Map<string, string>();
+	for (const user of await paymentCreators) {
+		paymentCreatorMap.set(user._id.toString(), user.name);
+	}
+
 	const productMap = new Map<string, Product>();
 	for (const product of products) {
 		productMap.set(product._id.toString(), product);
@@ -293,9 +327,20 @@ export async function getInvoiceDetail(
 		}
 		if (item.costOfGoodsSold !== undefined) {
 			result.costOfGoodsSold = item.costOfGoodsSold;
+			result.grossProfit = round2(item.total - item.costOfGoodsSold);
 		}
 		return result;
 	});
+
+	let cogs = 0;
+	for (const item of invoice.items) {
+		cogs += item.costOfGoodsSold ?? 0;
+	}
+	cogs = round2(cogs);
+	const summary: InvoiceDetailSummary = {
+		cogs,
+		profit: round2(invoice.subtotal - invoice.discount - cogs),
+	};
 
 	return {
 		invoice,
@@ -314,10 +359,11 @@ export async function getInvoiceDetail(
 			reference: payment.reference,
 			createdBy: {
 				_id: payment.createdBy,
-				name: "Unknown",
+				name: paymentCreatorMap.get(payment.createdBy.toString()) ?? "Unknown",
 			},
 			createdAt: payment.createdAt,
 		})),
+		summary,
 	};
 }
 
@@ -331,6 +377,7 @@ export async function updateInvoice(
 		taxRate?: number;
 		tax?: number;
 		total?: number;
+		balance?: number;
 		reference?: string;
 	},
 ): Promise<Invoice | null> {
@@ -342,6 +389,7 @@ export async function updateInvoice(
 	if (data.taxRate !== undefined) update.taxRate = data.taxRate;
 	if (data.tax !== undefined) update.tax = data.tax;
 	if (data.total !== undefined) update.total = data.total;
+	if (data.balance !== undefined) update.balance = data.balance;
 	if (data.reference !== undefined) update.reference = data.reference;
 
 	return collection().findOneAndUpdate(
@@ -354,6 +402,8 @@ export async function updateInvoice(
 export async function markConfirmed(
 	id: string,
 	items: InvoiceItem[],
+	total: number,
+	session?: ClientSession,
 ): Promise<Invoice | null> {
 	return collection().findOneAndUpdate(
 		{ _id: new ObjectId(id) },
@@ -362,10 +412,13 @@ export async function markConfirmed(
 				items,
 				status: "CONFIRMED",
 				confirmedAt: new Date(),
+				balance: total,
 				updatedAt: new Date(),
 			},
 		},
-		{ returnDocument: "after" },
+		session
+			? { returnDocument: "after", session }
+			: { returnDocument: "after" },
 	) as Promise<Invoice | null>;
 }
 
@@ -395,6 +448,24 @@ export async function adjustPaid(
 		{ _id: new ObjectId(id) },
 		{
 			$inc: { paidAmount: round2(delta), balance: round2(-delta) },
+			$set: { updatedAt: new Date() },
+		},
+		{ returnDocument: "after" },
+	) as Promise<Invoice | null>;
+}
+
+export async function adjustPaidIfPossible(
+	id: string,
+	amount: number,
+): Promise<Invoice | null> {
+	return collection().findOneAndUpdate(
+		{
+			_id: new ObjectId(id),
+			status: "CONFIRMED",
+			balance: { $gte: round2(amount) },
+		},
+		{
+			$inc: { paidAmount: round2(amount), balance: round2(-amount) },
 			$set: { updatedAt: new Date() },
 		},
 		{ returnDocument: "after" },
