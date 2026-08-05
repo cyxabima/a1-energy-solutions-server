@@ -1,4 +1,9 @@
-import { type Collection, ObjectId, type OptionalId } from "mongodb";
+import {
+	type ClientSession,
+	type Collection,
+	ObjectId,
+	type OptionalId,
+} from "mongodb";
 import { getDb } from "../db/index.js";
 import ApiError from "../utils/api-error.js";
 
@@ -54,12 +59,16 @@ export async function createBatch(
 export async function consumeBatchesFIFO(
 	productId: string,
 	quantity: number,
+	session?: ClientSession,
 ): Promise<BatchConsumption[]> {
 	const batches = await collection()
-		.find({
-			product: new ObjectId(productId),
-			remainingQty: { $gt: 0 },
-		})
+		.find(
+			{
+				product: new ObjectId(productId),
+				remainingQty: { $gt: 0 },
+			},
+			session ? { session } : undefined,
+		)
 		.sort({ createdAt: 1 })
 		.toArray();
 
@@ -88,6 +97,7 @@ export async function consumeBatchesFIFO(
 		await collection().updateOne(
 			{ _id: b._id },
 			{ $inc: { remainingQty: -consume }, $set: { updatedAt: new Date() } },
+			session ? { session } : undefined,
 		);
 
 		consumptions.push({

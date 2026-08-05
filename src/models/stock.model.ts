@@ -1,4 +1,9 @@
-import { type Collection, ObjectId, type OptionalId } from "mongodb";
+import {
+	type ClientSession,
+	type Collection,
+	ObjectId,
+	type OptionalId,
+} from "mongodb";
 import { getDb } from "../db/index.js";
 import type { BatchConsumption } from "./stock-batch.model.js";
 
@@ -64,6 +69,7 @@ export async function createMovement(
 
 export async function createMovements(
 	docs: CreateStockMovementInput[],
+	session?: ClientSession,
 ): Promise<StockMovement[]> {
 	const now = new Date();
 	const docsToInsert: OptionalId<StockMovement>[] = docs.map((d) => ({
@@ -72,7 +78,10 @@ export async function createMovements(
 		updatedAt: now,
 	}));
 
-	const result = await collection().insertMany(docsToInsert);
+	const result = await collection().insertMany(
+		docsToInsert,
+		session ? { session } : undefined,
+	);
 	return docsToInsert.map((doc, i) => ({
 		...doc,
 		_id: result.insertedIds[i] ?? new ObjectId(),
